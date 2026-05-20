@@ -19,10 +19,12 @@
 
 namespace pricer::system {
 
-struct OptionTask {
+// Add alignas(64) back to ensure the struct fits perfectly in a cache line
+struct alignas(64) OptionTask {
     models::HestonParams params;
     double* result_out;
     std::atomic<size_t>* completion_counter = nullptr;
+    uint64_t path_seed; // <-- CRN Seed Injection
 };
 
 class ThreadPool {
@@ -32,12 +34,10 @@ public:
         
         size_t actual_threads = (num_threads > 0) ? num_threads : 1;
 
-        // First, create all queues so they are ready before any thread starts
         for (size_t i = 0; i < actual_threads; ++i) {
             queues_.emplace_back(std::make_unique<SPSCQueue<OptionTask, 2048>>());
         }
         
-        // Then, create all threads
         for (size_t i = 0; i < actual_threads; ++i) {
             threads_.emplace_back([this, i] { worker_loop(i); });
         }
@@ -54,7 +54,6 @@ public:
     ThreadPool& operator=(const ThreadPool&) = delete;
 
     inline void submit(const OptionTask& task) {
-        // Use atomic to be safe if benchmark uses multiple threads
         size_t worker_idx = next_worker_.fetch_add(1, std::memory_order_relaxed) % queues_.size();
 
         while (!queues_[worker_idx]->push(task)) {
@@ -70,11 +69,14 @@ private:
 
     void worker_loop(size_t queue_index) {
         OptionTask task;
-        math::Xoshiro256 prng; 
-        prng.seed(0x123456789 + queue_index);
 
         while (true) {
             if (queues_[queue_index]->pop(task)) {
+                
+                // Deterministic re-seed for this specific task
+                math::Xoshiro256 prng; 
+                prng.seed(task.path_seed);
+
                 models::HestonCallPricer pricer(task.params);
                 *(task.result_out) = pricer.price(prng);
                 if (task.completion_counter) {
@@ -83,6 +85,9 @@ private:
             } else if (!running_.load(std::memory_order_acquire)) {
                 // Final drain
                 while (queues_[queue_index]->pop(task)) {
+                    math::Xoshiro256 prng; 
+                    prng.seed(task.path_seed);
+
                     models::HestonCallPricer pricer(task.params);
                     *(task.result_out) = pricer.price(prng);
                     if (task.completion_counter) {

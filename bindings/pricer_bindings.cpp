@@ -13,14 +13,17 @@ std::vector<double> batch_price_heston(const models::HestonParams& params, size_
     std::vector<double> results(num_contracts, 0.0);
     std::atomic<size_t> completed{0};
     
-    std::vector<system::OptionTask> tasks(num_contracts);
+std::vector<system::OptionTask> tasks(num_contracts);
     for (size_t i = 0; i < num_contracts; ++i) {
         tasks[i].params = params;
         tasks[i].result_out = &results[i];
         tasks[i].completion_counter = &completed;
+        
+        // Inject a golden-ratio seed offset by the loop index
+        tasks[i].path_seed = 0x9E3779B97F4A7C15ULL + i; 
+        
         pool.submit(tasks[i]);
     }
-
     // Spin-wait for the batch to finish
     while (completed.load(std::memory_order_acquire) < num_contracts) {
         std::this_thread::yield();
