@@ -80,7 +80,6 @@ def heston_loss(params_array, S0, market_data, cpp_params):
         results = pricer_core.batch_price_heston(cpp_params, 10000) 
         model_price = np.mean(results)
         
-        # THE FIX: Relative (Percentage) Error. 
         # Forces the optimizer to care about cheap OTM puts.
         total_error += ((model_price - data['Price']) / data['Price']) ** 2
         
@@ -109,7 +108,6 @@ def calibrate():
     # Initial Guess: [v0, kappa, theta, sigma, rho]
     initial_guess = [0.04, 2.0, 0.04, 0.2, -0.5]
     
-    # Box Constraints
     bounds = (
         (0.001, 1.0),   # v0: Must be positive
         (0.01, 10.0),   # kappa: Mean reversion speed

@@ -1,6 +1,6 @@
 import pricer_core
 import time
-import numpy as np # Add this
+import numpy as np 
 
 params = pricer_core.HestonParams()
 params.S0 = 100.0
